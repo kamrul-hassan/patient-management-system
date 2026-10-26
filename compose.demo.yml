@@ -1,4 +1,4 @@
-# Used only by scripts/demo.ps1 with the fixed careflow-demo project.
+# Used only by scripts/demo.ps1 with its checkout-specific careflow-demo-* project.
 services:
   migrate:
     image: careflow-demo-api:local

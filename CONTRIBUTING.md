@@ -12,7 +12,7 @@ Open **http://localhost:3100**. Sign in as `developer@example.com`; open `.local
 
 The launcher builds the applications, initializes PostgreSQL, applies migrations using a dedicated schema owner, seeds twelve fictional patients and their sample records, and checks authenticated access. Clinic names begin with `[DEMO]`. Login remains required; this is a real PostgreSQL stack with synthetic data, not an authentication bypass.
 
-The demo always uses the `careflow-demo` Compose project, its own `careflow-demo_postgres_data` volume, demo-specific image tags, and newly generated secrets in `.local/demo/secrets/`. The default `careflow` stack, native database, root `.env`, `.secrets/`, and backups are not reused. Inherited Compose project/file settings are cleared for demo commands, and resolved secret paths are checked before startup.
+Each checkout uses a stable `careflow-demo-<checkout-id>` Compose project derived from its directory path, its own project-scoped database volume, demo-specific image tags, and newly generated secrets in `.local/demo/secrets/`. A fresh clone does not collide with another checkout's database or require its credentials. The default `careflow` stack, native database, root `.env`, `.secrets/`, and backups are not reused. Inherited Compose project/file settings are cleared for demo commands, and resolved secret paths are checked before startup.
 
 Re-running the command reuses demo credentials and data; it does not reset the database or duplicate seed records. If port 3100 is occupied, use `-Port 3200`. Keep using that port when restarting the demo. The main application's standard port 3000 is deliberately excluded.
 
@@ -21,7 +21,7 @@ pwsh -NoProfile -File scripts/demo.ps1 -Action Status
 pwsh -NoProfile -File scripts/demo.ps1 -Action Stop
 ```
 
-Stopping retains demo data and secrets. The launcher has no reset/delete command. If the demo volume exists but its secrets are missing, it stops and asks you to recover them instead of generating mismatched passwords. Do not delete your main stack's volume or private files to repair a demo.
+Stopping retains demo data and secrets. Run Start/Stop/Status from the same checkout path; moving a checkout changes its project identity and leaves its previous containers and volume untouched. The launcher has no reset/delete command. If this checkout's demo volume exists but its secrets are missing, it stops and asks you to recover them instead of generating mismatched passwords. Do not delete your main stack's volume or private files to repair a demo.
 
 ## Architecture and security boundaries
 

@@ -5,6 +5,10 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
+$identityPath = [IO.Path]::GetFullPath($workspace).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+if ($IsWindows) { $identityPath = $identityPath.ToLowerInvariant() }
+$checkoutId = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identityPath))).Substring(0,12).ToLowerInvariant()
+$projectName = 'careflow-demo-' + $checkoutId
 Push-Location -LiteralPath $workspace
 try {
     if ($Port -in @(3000,5050,5432)) { throw 'Choose a demo port other than the standard app/API/database ports (default: 3100).' }
@@ -14,7 +18,7 @@ try {
     # An explicit env file excludes the developer's root .env. Environment values
     # are also set on each child process to defeat inherited Compose overrides.
     if (!(Test-Path -LiteralPath $envFile)) { [IO.File]::WriteAllText($envFile, "# Demo-only non-secret settings.`n") }
-    $composeArguments = @('compose','--project-name','careflow-demo','--project-directory',$workspace,'--env-file',$envFile,'--file','compose.yml','--file','compose.demo.yml')
+    $composeArguments = @('compose','--project-name',$projectName,'--project-directory',$workspace,'--env-file',$envFile,'--file','compose.yml','--file','compose.demo.yml')
     function Invoke-DemoDocker {
         param([string[]]$Arguments, [string]$InputText = '', [switch]$Capture, [switch]$RawDocker)
         $info = [Diagnostics.ProcessStartInfo]::new('docker')
@@ -43,7 +47,7 @@ try {
     Invoke-DemoDocker @('info','--format','{{.ServerVersion}}') -RawDocker -Capture | Out-Null
     $secretDirectory = Join-Path $demoDirectory 'secrets'
     if (!(Test-Path -LiteralPath $secretDirectory)) {
-        $existingVolume = Invoke-DemoDocker @('volume','ls','--filter','name=^careflow-demo_postgres_data$','--format','{{.Name}}') -RawDocker -Capture
+        $existingVolume = Invoke-DemoDocker @('volume','ls','--filter',("name=^${projectName}_postgres_data$"),'--format','{{.Name}}') -RawDocker -Capture
         if ($existingVolume) { throw 'Demo volume exists but its secrets are missing. Recover the demo secrets; this launcher never resets a database or replaces its passwords.' }
         & (Join-Path $PSScriptRoot 'init-docker-secrets.ps1') -RelativeDirectory '.local/demo/secrets'
     }
@@ -51,7 +55,7 @@ try {
         if (!(Test-Path -LiteralPath (Join-Path $secretDirectory $name) -PathType Leaf)) { throw 'Demo secret set is incomplete; no existing credentials will be replaced.' }
     }
     $config = (Invoke-DemoDocker @('config','--format','json') -Capture) | ConvertFrom-Json
-    if ($config.name -ne 'careflow-demo' -or $config.volumes.postgres_data.name -ne 'careflow-demo_postgres_data') { throw 'Unexpected demo project or volume.' }
+    if ($config.name -ne $projectName -or $config.volumes.postgres_data.name -ne "${projectName}_postgres_data") { throw 'Unexpected demo project or volume.' }
     foreach ($secret in $config.secrets.PSObject.Properties) {
         $path = [IO.Path]::GetFullPath($secret.Value.file)
         if (![string]::Equals([IO.Path]::GetDirectoryName($path), [IO.Path]::GetFullPath($secretDirectory), [StringComparison]::OrdinalIgnoreCase)) { throw 'Demo attempted to use a non-demo secret file.' }
@@ -83,6 +87,7 @@ console.log('PASS: authenticated PostgreSQL demo with synthetic data and secure 
 '@
     Invoke-DemoDocker @('exec','-T','web','node','--input-type=module') $check
     Write-Output "Demo ready: http://localhost:$Port | Staff email: developer@example.com"
+    Write-Output "Checkout-specific Docker project: $projectName"
     Write-Output 'Read the generated password privately from .local/demo/secrets/staff_password. No password has been printed.'
     Write-Output 'Stop only this demo: pwsh -NoProfile -File scripts/demo.ps1 -Action Stop'
 } finally {

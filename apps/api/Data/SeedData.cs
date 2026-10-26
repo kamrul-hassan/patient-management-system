@@ -8,9 +8,9 @@ public static class SeedData
     public static async Task InitializeAsync(ClinicDbContext db, string timeZoneId = "Asia/Dhaka")
     {
         if (await db.Locations.AnyAsync()) return;
-        var downtown = new Location { Id = Guid.NewGuid(), Name = "Downtown Clinic", Address = "120 Madison Avenue, New York" };
-        var westside = new Location { Id = Guid.NewGuid(), Name = "Westside Wellness", Address = "85 West End Avenue, New York" };
-        var brooklyn = new Location { Id = Guid.NewGuid(), Name = "Brooklyn Care", Address = "42 Atlantic Avenue, Brooklyn" };
+        var downtown = new Location { Id = Guid.NewGuid(), Name = "[DEMO] Downtown Clinic", Address = "Fictional clinic — sample data only" };
+        var westside = new Location { Id = Guid.NewGuid(), Name = "[DEMO] Westside Wellness", Address = "Fictional clinic — sample data only" };
+        var brooklyn = new Location { Id = Guid.NewGuid(), Name = "[DEMO] Brooklyn Care", Address = "Fictional clinic — sample data only" };
         db.Locations.AddRange(downtown, westside, brooklyn);
         string[] names = ["Olivia Rhye", "Phoenix Baker", "Lana Steiner", "Demi Wilkinson", "Drew Cano", "Natali Craig", "Orlando Diggs", "Andi Lane", "Kate Morrison", "Alex Morgan", "Sophie Moore", "James Wilson"];
         var clinicZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);

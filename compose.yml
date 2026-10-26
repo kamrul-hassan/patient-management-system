@@ -105,18 +105,18 @@ volumes:
 
 secrets:
   postgres_password:
-    file: ./.secrets/postgres_password
+    file: ${CAREFLOW_SECRETS_DIR:-./.secrets}/postgres_password
   migration_password:
-    file: ./.secrets/migration_password
+    file: ${CAREFLOW_SECRETS_DIR:-./.secrets}/migration_password
   application_password:
-    file: ./.secrets/application_password
+    file: ${CAREFLOW_SECRETS_DIR:-./.secrets}/application_password
   api_key:
-    file: ./.secrets/api_key
+    file: ${CAREFLOW_SECRETS_DIR:-./.secrets}/api_key
   session_secret:
-    file: ./.secrets/session_secret
+    file: ${CAREFLOW_SECRETS_DIR:-./.secrets}/session_secret
   staff_password:
-    file: ./.secrets/staff_password
+    file: ${CAREFLOW_SECRETS_DIR:-./.secrets}/staff_password
   migration_connection:
-    file: ./.secrets/migration_connection
+    file: ${CAREFLOW_SECRETS_DIR:-./.secrets}/migration_connection
   application_connection:
-    file: ./.secrets/application_connection
+    file: ${CAREFLOW_SECRETS_DIR:-./.secrets}/application_connection

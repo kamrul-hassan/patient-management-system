@@ -1,0 +1,10 @@
+# Used only by scripts/demo.ps1 with the fixed careflow-demo project.
+services:
+  migrate:
+    image: careflow-demo-api:local
+    environment:
+      SeedDemoData: "true"
+  api:
+    image: careflow-demo-api:local
+  web:
+    image: careflow-demo-web:local

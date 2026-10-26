@@ -2,6 +2,16 @@
 
 Patient management built with ASP.NET Core 10, Next.js, React, TypeScript, Entity Framework Core, and PostgreSQL 18. See the package manifests and lockfiles for exact dependencies.
 
+## New contributor: one-command demo
+
+With Docker running and PowerShell 7 installed, run:
+
+```powershell
+pwsh -NoProfile -File scripts/demo.ps1
+```
+
+Open **http://localhost:3100** and sign in as `developer@example.com` with the generated password in the private `.local/demo/secrets/staff_password` file. This creates a separate Docker project, volume, and secrets with fictional sample data. It does not use your existing database or credentials. Re-running preserves demo data; `-Action Stop` stops only the demo. See [CONTRIBUTING.md](CONTRIBUTING.md) for onboarding, architecture, migrations, and the pull request workflow.
+
 ## Docker setup
 
 Install Docker Desktop with Linux containers (or Docker Engine with Compose), PowerShell 7, and Git. The native PostgreSQL service is not needed by Docker. Your existing native environment files, database, and ignored `configure-local.ps1` remain local and are not used to provision Docker.

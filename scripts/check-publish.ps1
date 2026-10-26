@@ -16,10 +16,12 @@ try {
             }
         }
     }
-    if (Test-Path -LiteralPath '.secrets') {
-        foreach ($secretFile in Get-ChildItem -LiteralPath '.secrets' -File) {
-            $value = [IO.File]::ReadAllText($secretFile.FullName).Trim()
-            if ($value) { $localSecrets += $value }
+    foreach ($secretDirectory in @('.secrets', '.local/demo/secrets')) {
+        if (Test-Path -LiteralPath $secretDirectory) {
+            foreach ($secretFile in Get-ChildItem -LiteralPath $secretDirectory -File) {
+                $value = [IO.File]::ReadAllText($secretFile.FullName).Trim()
+                if ($value) { $localSecrets += $value }
+            }
         }
     }
     $failures = @()

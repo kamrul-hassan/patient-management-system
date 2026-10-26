@@ -85,6 +85,12 @@ jobs:
       - run: docker compose up --build --detach
       - name: Test isolated stack and database permissions
         run: node tests/docker.integration.mjs
+      - name: Start and verify the isolated contributor demo
+        shell: pwsh
+        run: |
+          ./scripts/demo.ps1 -Port 3200
+          ./scripts/demo.ps1 -Action Status -Port 3200
+          ./scripts/demo.ps1 -Action Stop -Port 3200
       - name: Container status
         if: failure()
         run: docker compose ps --all

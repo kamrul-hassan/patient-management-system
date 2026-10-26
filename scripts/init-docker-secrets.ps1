@@ -1,6 +1,7 @@
 #Requires -Version 7.0
+param([ValidateSet('.secrets', '.local/demo/secrets')][string]$RelativeDirectory = '.secrets')
 $ErrorActionPreference = 'Stop'
-$secretDirectory = Join-Path (Split-Path -Parent $PSScriptRoot) '.secrets'
+$secretDirectory = Join-Path (Split-Path -Parent $PSScriptRoot) $RelativeDirectory
 if (Test-Path -LiteralPath $secretDirectory) {
     throw 'The .secrets directory already exists. Keep existing secrets with their database volume; this command never replaces them.'
 }
@@ -27,4 +28,4 @@ foreach ($entry in $values.GetEnumerator()) {
     }
 }
 Write-Output 'Created private Docker secret files without printing credentials. Existing native environment files and databases were not changed.'
-Write-Output 'The generated staff password is stored in .secrets/staff_password. Keep it private.'
+Write-Output "The generated staff password is stored in $RelativeDirectory/staff_password. Keep it private."

@@ -1,0 +1,13 @@
+{
+  "name": "careflow",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix apps/web",
+    "build": "dotnet build Careflow.slnx && npm run build --prefix apps/web",
+    "typecheck": "npm run typecheck --prefix apps/web",
+    "test:api": "node tests/api.integration.mjs",
+    "test:web": "node tests/web.integration.mjs",
+    "test:swagger": "node tests/swagger.integration.mjs",
+    "format": "npm run format --prefix apps/web"
+  }
+}

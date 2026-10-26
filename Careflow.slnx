@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/apps/">
+    <Project Path="apps/api/Careflow.Api.csproj" />
+  </Folder>
+</Solution>

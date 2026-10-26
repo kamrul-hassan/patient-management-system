@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: careflow
+      POSTGRES_USER: careflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U careflow -d careflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Careflow: Host=db;Port=5432;Database=careflow;Username=careflow;Password=${POSTGRES_PASSWORD}
+      ApiKey: ${API_KEY:?Set API_KEY in .env}
+      SeedDemoData: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  web:
+    build:
+      context: ./apps/web
+    environment:
+      API_URL: http://api:8080
+      API_KEY: ${API_KEY}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      STAFF_EMAIL: ${STAFF_EMAIL:?Set STAFF_EMAIL in .env}
+      STAFF_PASSWORD: ${STAFF_PASSWORD:?Set STAFF_PASSWORD in .env}
+      DEMO_MODE: "false"
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the browser-facing origin}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+volumes:
+  postgres_data:

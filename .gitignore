@@ -58,3 +58,4 @@ test-results/
 *.tsbuildinfo
 .vs/
 .local/
+/configure-local.ps1

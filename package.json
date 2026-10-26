@@ -1,6 +1,7 @@
 {
   "name": "careflow",
   "private": true,
+  "engines": { "node": ">=24 <25", "npm": ">=11 <12" },
   "scripts": {
     "dev": "npm run dev --prefix apps/web",
     "build": "dotnet build Careflow.slnx && npm run build --prefix apps/web",
@@ -8,6 +9,9 @@
     "test:api": "node tests/api.integration.mjs",
     "test:web": "node tests/web.integration.mjs",
     "test:swagger": "node tests/swagger.integration.mjs",
-    "format": "npm run format --prefix apps/web"
+    "format": "npm run format --prefix apps/web",
+    "security:publish": "pwsh -NoProfile -File scripts/check-publish.ps1",
+    "docker:up": "docker compose up --build --detach",
+    "docker:stop": "docker compose stop"
   }
 }

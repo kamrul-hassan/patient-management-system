@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - name: Check publication rules
+        shell: pwsh
+        run: ./scripts/check-publish.ps1
+      - name: Scan Git history for secrets
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/gitleaks.tar.gz" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git . --redact --no-banner
+      - run: npm ci --prefix apps/web
+      - run: npm audit --prefix apps/web --audit-level=high
+      - run: npm run format:check --prefix apps/web
+      - run: npm run build --prefix apps/web
+      - run: npm run typecheck --prefix apps/web
+      - run: dotnet restore Careflow.slnx --locked-mode
+      - run: dotnet build Careflow.slnx --configuration Release --no-restore
+      - run: dotnet restore tests/ConfigurationChecks --locked-mode
+      - run: dotnet run --project tests/ConfigurationChecks --configuration Release --no-restore
+      - name: Check NuGet vulnerability advisories
+        shell: pwsh
+        run: |
+          $report = dotnet list apps/api/Careflow.Api.csproj package --vulnerable --include-transitive --format json --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'NuGet audit failed.' }
+          $audit = ($report -join "`n") | ConvertFrom-Json
+          foreach ($project in $audit.projects) {
+            foreach ($framework in $project.frameworks) {
+              foreach ($package in @($framework.topLevelPackages) + @($framework.transitivePackages)) {
+                if ($package.vulnerabilities) { throw "Vulnerable package: $($package.id)" }
+              }
+            }
+          }
+      - run: docker compose config --quiet
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      COMPOSE_PROJECT_NAME: careflow-ci
+      WEB_PORT: '3100'
+      APP_ORIGIN: http://localhost:3100
+      STAFF_EMAIL: ci@example.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Generate disposable test secrets
+        shell: pwsh
+        run: ./scripts/init-docker-secrets.ps1
+      - run: docker compose up --build --detach
+      - name: Test isolated stack and database permissions
+        run: node tests/docker.integration.mjs
+      - name: Container status
+        if: failure()
+        run: docker compose ps --all
+      - name: Remove disposable CI containers and volume
+        if: always()
+        run: docker compose down --volumes --remove-orphans

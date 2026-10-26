@@ -1,188 +1,118 @@
 # Careflow
 
-Patient management built with ASP.NET Core 10, Next.js 16.4.3 / React 19.3.1, TypeScript, Entity Framework Core 10, and PostgreSQL 18.
+Patient management built with ASP.NET Core 10, Next.js, React, TypeScript, Entity Framework Core, and PostgreSQL 18. See the package manifests and lockfiles for exact dependencies.
 
-The normal development setup runs all three services directly on Windows:
+## Docker setup
 
-- **API:** Visual Studio, using F5.
-- **Web:** VS Code, using its terminal or frontend debugger.
-- **Database:** the installed local PostgreSQL service on port 5432.
+Install Docker Desktop with Linux containers (or Docker Engine with Compose), PowerShell 7, and Git. The native PostgreSQL service is not needed by Docker. Your existing native environment files, database, and ignored `configure-local.ps1` remain local and are not used to provision Docker.
 
-Docker is not needed for native development. The old hybrid Docker debug override and launcher have been removed. The base Docker deployment files are optional deployment artifacts; they do not participate in the steps below.
-
-## One-time native setup
-
-Requires .NET SDK 10, Node.js 24 LTS, PostgreSQL 18, Visual Studio with .NET 10 support, and VS Code.
-
-For a fresh clone, copy `.env.example` to `.env` and replace every placeholder locally. Use distinct random values of at least 32 characters for `API_KEY` and `SESSION_SECRET`, a strong database password, and your own staff credentials. Do not commit the populated file.
+Generate Docker-only secrets once:
 
 ```powershell
-Copy-Item .env.example .env
-# Edit .env before continuing.
-.\configure-local.ps1
+pwsh -NoProfile -File scripts/init-docker-secrets.ps1
 ```
 
-This creates a new empty local database. EF migrations apply when the API starts. Native setup copies the API configuration into .NET User Secrets and web configuration into the ignored `apps/web/.env.local` file. Secrets are not printed.
+The script generates distinct random credentials in `.secrets/`, restricts host directory access, and never prints their values. It refuses to replace an existing directory. Keep those files with the database volume; regenerating them does not change passwords already stored in PostgreSQL. Local Compose secrets are file mounts, not an encrypted vault.
 
-For an existing local installation only, if you have prepared a backup and baseline counts under `.local/backups`, you can restore them with the following command. Backups and local setup metadata are excluded from Git and are not supplied in a clone:
+Choose non-secret settings through your shell or an optional ignored root `.env`:
 
-```powershell
-.\configure-local.ps1 -MigrateFromDocker
+```dotenv
+STAFF_EMAIL=admin@example.com
+APP_ORIGIN=http://localhost:3000
+WEB_PORT=3000
 ```
 
-Despite the migration switch name, restoration reads the prepared local backup and does not need running Docker containers. Enter your **existing local PostgreSQL administrator password** at the private PowerShell prompt. This is separate from the app password in `.env`.
+For a public deployment, use your actual HTTPS origin and put an HTTPS reverse proxy in front of the loopback web port. The local HTTP exception applies only to localhost. Cookies remain Secure in production, so use `localhost` for local browser access and HTTPS for deployment.
 
-The helper creates a dedicated **careflow_local** login and database on `127.0.0.1:5432`, restores the backup in a transaction, and verifies every sample-data count. It does not overwrite unrelated databases or change existing PostgreSQL users' passwords. If those names already belong to another database/user, choose alternatives:
+Start the stack:
 
 ```powershell
-.\configure-local.ps1 -MigrateFromDocker -DatabaseName careflow_local_test -DatabaseUser careflow_local_test
+docker compose config --quiet
+docker compose up --build --detach
+docker compose ps --all
 ```
 
-The default PostgreSQL tools path is `C:\Program Files\PostgreSQL\18\bin`; use `-PostgresBin` if yours differs. The helper stores non-secret setup metadata in `.local/native-development.json`. Re-running after a successful migration refreshes app configuration without restoring over later edits.
+Open **http://localhost:3000** and sign in with the configured `STAFF_EMAIL` (default `admin@careflow.local`) and the password in the private `.secrets/staff_password` file. Read that file privately in your editor; never paste it into issues, chat, screenshots, or source files.
 
-For a new empty database, omit `-MigrateFromDocker`.
+A new Docker database starts empty. No patient records or native database backups are automatically imported.
 
-## Publishing source to GitHub
+## Container and database boundaries
 
-Run the local publication check before committing or pushing:
+- `db` initializes PostgreSQL and two non-administrator logins on a new volume.
+- `migrate` applies EF migrations with the schema owner and exits before `api` starts.
+- `api` uses a separate login that can read/write application data but cannot create schema objects or administer PostgreSQL. It does not apply migrations at production startup.
+- `web` mounts only its API key, session key, and staff password. It connects to the API server-side.
+
+API/web containers run as non-root users with read-only filesystems, dropped capabilities, and no privilege escalation. Database and API ports are not published. The database network is internal. Only the web port binds to `127.0.0.1`.
+
+Plain database transport is explicitly allowed for the isolated single-host Docker network. For a managed or remote PostgreSQL server, remove `Database__AllowUnencryptedConnection`, use a connection with `SSL Mode=VerifyFull`, configure its trusted certificate, and preserve private connectivity. The API rejects missing passwords, administrator runtime logins, and sensitive database logging settings in production.
+
+Keep the mounted `.secrets/` directory and backups outside your Git history and image build contexts. See [SECURITY.md](SECURITY.md) for deployment requirements and incident response.
+
+## Updating and stopping Docker
+
+For an update, first back up the database and review/test schema changes, then run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-publish.ps1
-git status --short
-git diff --cached --stat
+docker compose build
+docker compose stop api web
+docker compose run --rm migrate
+docker compose up --detach
 ```
 
-The check examines tracked files and unignored new files, rejects secret/backup paths, and looks for configured local secret values and common credential formats. It reports file names only. It is a guard against accidental publication, not a complete secret scanner. Review new content, including screenshots, for private data. The included screenshots and seed scripts use demo data.
-
-Keep real credentials in ignored local environment files or a deployment secret store. Commit only placeholder environment templates. Do not force-add ignored files. SQL files are ignored except the two reviewed synthetic seed scripts. Database dumps, archives, local databases, and private keys are also ignored. If a credential has already been published, rotate it and remove it from repository history.
-
-## Run the API in Visual Studio
-
-1. Open **Careflow.slnx**.
-2. Set **Careflow.Api** as the startup project.
-3. Select the **Careflow.Api** launch profile.
-4. Press **F5**.
-
-The API listens on **http://localhost:5050**, uses the local PostgreSQL database, and opens **Swagger UI** at **http://localhost:5050/swagger**. Credentials are loaded from **Careflow.Api → Manage User Secrets**. Do not place passwords in `launchSettings.json`.
-
-To run the same API from a terminal instead:
+Stop services without deleting data:
 
 ```powershell
+docker compose stop
+```
+
+`docker compose down` removes containers and networks while retaining the named database volume. Do not use `--volumes`/`-v` on data you need. The role initializer runs only on a new volume; an older volume needs a planned role/permissions migration. Do not delete an existing volume to apply these settings.
+
+## Native development
+
+Docker is the reproducible setup for a fresh clone. Native development remains available with .NET 10, Node.js 24, PowerShell 7, and PostgreSQL. The existing private setup helper is deliberately not included in Git.
+
+Store API configuration through **Manage User Secrets** in Visual Studio or `dotnet user-secrets`. Supply `ApiKey` and `ConnectionStrings:Careflow`; use a dedicated development database login. Do not write credentials into `appsettings.json` or `launchSettings.json`.
+
+Copy `apps/web/.env.example` to the ignored `apps/web/.env.local` and configure the matching server API key, a distinct session secret, staff credentials, API URL, and browser origin. Example values must be replaced. Never use `NEXT_PUBLIC_*` for secrets.
+
+```powershell
+dotnet tool restore
+dotnet restore Careflow.slnx --locked-mode
+npm ci --prefix apps/web
 dotnet run --project apps/api --launch-profile Careflow.Api
+# In a separate terminal:
+npm run dev --prefix apps/web
 ```
 
-Use either the terminal or Visual Studio for the API, so two processes do not compete for port 5050.
+The development API listens on `http://localhost:5050`; its development-only Swagger UI is at `/swagger`. Select **Authorize** and provide the private API key to test clinic endpoints. Swagger does not embed the key or persist authorization. Native Development applies EF migrations on startup; production uses the separate migration job.
 
-### Test endpoints in Swagger
-
-Click **Authorize** and paste the **ApiKey** value from Manage User Secrets (the same value as root `.env` → `API_KEY`). Enter the raw key without a `Bearer` prefix.
-
-Start with **Workspace → GET /api/workspace → Try it out → Execute**. Copy returned patient IDs, location IDs, and provider names into other requests. Endpoints are grouped by feature, and request/response schemas are provided.
-
-Swagger is enabled only in Development. It does not embed your API key or retain authorization across page refreshes. The health endpoint is public; clinic endpoints still require `X-Api-Key`. POST and PATCH requests save changes to your connected local database.
-
-OpenAPI JSON: **http://localhost:5050/swagger/v1/swagger.json**.
-
-## Run the web project in VS Code
-
-Open **Careflow.Web.code-workspace**, or open the **apps/web** folder directly in VS Code. In its terminal:
+## Verification and GitHub
 
 ```powershell
-npm ci
-npm run dev
-```
-
-Open **http://localhost:3000** and sign in with `STAFF_EMAIL` and `STAFF_PASSWORD` from your root `.env`. Your generated `apps/web/.env.local` already points to **http://localhost:5050** and keeps demo mode disabled.
-
-For VS Code debugging, select **Careflow Web: development server** under Run and Debug, then press **F5**. The built-in Node debugger starts Next.js with inspection enabled. Optionally start **Careflow Web: browser** to debug client code in Edge after the server is running.
-
-Next.js forwards requests directly to the local API. API requests wait up to five minutes in the local development configuration so you can pause at Visual Studio breakpoints. Use `API_TIMEOUT_MS` in `apps/web/.env.local` to adjust this; the normal server default is 15 seconds.
-
-If you edit root app secrets or staff credentials later, run:
-
-```powershell
-.\configure-local.ps1 -ConfigureOnly
-```
-
-Then restart both the API and Next.js. This refreshes their configuration without reimporting the database. Changing `POSTGRES_PASSWORD` in `.env` does not itself change an existing PostgreSQL role's password.
-
-## Sample data and analytics
-
-The migrated dataset includes:
-
-- One clearly labeled fictional clinic and eight sample patients.
-- Twelve current/upcoming appointments and 437 historical appointments across May–October 2026.
-- Eight medical records and generated post-visit summaries.
-- Eight current invoices plus 404 paid historical invoices.
-- Eight test consent forms, with signed/unsigned examples.
-- Twelve portal messages, with incoming messages, staff replies, and unread examples.
-
-All sample records are explicitly marked as fictional. No real messages are delivered, cards charged, or treatment authorized.
-
-To insert a missing base sample clinic/patients/appointments while both native apps are running (PowerShell 7):
-
-```powershell
-pwsh -NoProfile -File .\scripts\seed-sample.ps1
-```
-
-To add missing sample medical records, invoices, and test consents:
-
-```powershell
-node --env-file=apps/web/.env.local scripts/seed-sample-details.mjs
-```
-
-To insert missing sample messages or historical analytics rows into the native database:
-
-```powershell
-.\scripts\run-sample-sql.ps1 -Dataset Messages
-.\scripts\run-sample-sql.ps1 -Dataset History
-```
-
-The helpers preserve existing entries and later status/read-state changes. History is generated through yesterday in Asia/Dhaka, across the six calendar months shown in the revenue chart. Refresh the browser after adding data.
-
-## Structure
-
-```text
-apps/api/
-  Domain/           Persistence entities
-  Data/             EF context, migrations, optional demo seed
-  Endpoints/        Request DTOs, validation, clinic workflows
-  Services/         API-key protection and Swagger configuration
-  Properties/       Visual Studio launch profile
-apps/web/
-  .vscode/          VS Code server/browser debug configurations
-  src/app/          App Router, staff login, same-origin API proxy
-  src/components/   Workspace shell, dashboard, charts, modules, dialogs
-  src/lib/          Typed contracts, session security, utilities
-scripts/            Insert-only sample-data helpers
-tests/              API, web security, and Swagger integration checks
-.local/             Ignored database backup and local setup metadata
-```
-
-## Features and boundaries
-
-Appointments support overlap checks, provider selection, statuses, search, and location filtering. Patient charts support clinical records, medications/care plans, allergies, and follow-up summaries. Billing supports invoices and manually recorded payments in USD. Consent forms capture typed acknowledgments. Analytics uses actual workspace visit/payment data. Virtual visits include a local camera/microphone check, and portal messaging stores incoming examples and staff outbox entries. Trial registration stores a 14-day evaluation request.
-
-Live patient video calls, patient portal authentication, email/SMS delivery, card processing, verified electronic signatures, and automated trial account provisioning are not connected. The UI labels these boundaries.
-
-The starter has one configured staff account. Location selection filters data; it is not an authorization boundary. Before using real patient data, add individual accounts/roles, location authorization, audit/amendment history, session revocation, managed secrets, backups/recovery, pagination, monitoring, and appropriate privacy/consent controls. No clinical or regulatory compliance assessment has been performed.
-
-## Verification and maintenance
-
-```powershell
+pwsh -NoProfile -File scripts/check-publish.ps1
 dotnet build Careflow.slnx
 npm run build --prefix apps/web
 npm run typecheck --prefix apps/web
 npm run format:check --prefix apps/web
 ```
 
-Integration scripts are in `tests/`. API workflow tests write synthetic records and must target a **disposable database**, not your migrated app database. Web and Swagger security checks are read-only. Set `WEB_TEST_REQUIRE_SECURE=false` when testing the native development web server; the default asserts production Secure cookies. See other required environment variables at the top of each file.
+The publication check inspects working files and staged text, blocks private configuration/backup paths, and compares content with local native and Docker secrets. It reports filenames only. It is not a complete secret scanner; review all new files and screenshots before publishing.
 
-For schema changes:
+GitHub CI uses read-only repository permissions and commit-pinned actions. It scans full Git history with a checksum-pinned Gitleaks release, checks publication rules and dependency advisories, builds both applications, and tests a disposable Docker stack. Dependabot proposes npm, NuGet, image, Compose, and Actions updates for review. Image digests and dependency lockfiles keep reviewed builds reproducible; review and merge their updates regularly.
+
+The Docker test suite creates synthetic data. It requires a `COMPOSE_PROJECT_NAME` of `careflow-ci` or `careflow-test-*`, a separate volume, and a free port. Never run mutating integration tests against a working patient database. CI removes only its own disposable volume.
 
 ```powershell
-dotnet tool restore
-dotnet ef migrations add DescribeChange --project apps/api --output-dir Data/Migrations
+$env:COMPOSE_PROJECT_NAME = 'careflow-test-local'
+$env:WEB_PORT = '3100'
+$env:APP_ORIGIN = 'http://localhost:3100'
+docker compose up --build --detach
+node tests/docker.integration.mjs
 ```
 
-Nullable reference types, .NET warnings as errors, strict TypeScript, DTO validation, UTC timestamps, decimal money, PostgreSQL advisory locks for scheduling, conditional consent signing, no-store API responses, API-key protection, signed HttpOnly staff sessions, same-origin checks, rate limits, and escaped CSV exports are included. User Secrets are a development configuration store, not an encrypted production vault.
+## Features and current limits
+
+The application includes appointments, synthetic patient charts and records, invoices, consent acknowledgments, analytics, and local camera/microphone checks. Demo seed scripts contain fictional data; database dumps are not included. Some native sample helpers require private local setup metadata.
+
+This is a single-staff-account starter. Location filters are not authorization boundaries. Live patient calls, patient portal identities, outbound email/SMS, card processing, and verified electronic signatures are not connected. Before using real patient data, add individual identities/MFA, role and location authorization, audit history, session revocation, distributed rate limiting, encrypted backups with tested recovery, monitoring, and a deployment-specific privacy/security assessment.

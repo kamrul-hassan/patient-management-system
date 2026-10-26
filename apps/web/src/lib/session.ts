@@ -1,13 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
+import { serverSecret } from "@/lib/server-secrets";
 
 export function isDemo() {
   return process.env.DEMO_MODE === "true" && process.env.NODE_ENV !== "production";
 }
 
 function sign(value: string) {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) throw new Error("Configure SESSION_SECRET (32+ characters).");
+  const secret = serverSecret("SESSION_SECRET");
+  if (!secret || secret.length < 32 || secret.startsWith("replace-"))
+    throw new Error("Configure SESSION_SECRET (32+ random characters).");
   return createHmac("sha256", secret).update(value).digest("hex");
 }
 

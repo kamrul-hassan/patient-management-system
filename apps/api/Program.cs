@@ -7,16 +7,22 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+// Docker mounts secret files only at runtime; filenames map __ to configuration sections.
+builder.Configuration.AddKeyPerFile("/run/secrets", optional: true);
+var migrateOnly = args.Contains("--migrate", StringComparer.Ordinal);
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
 if (builder.Environment.IsDevelopment()) builder.Services.AddClinicSwagger();
 var demo = builder.Configuration["Database:Provider"] == "InMemory";
 if (demo && !builder.Environment.IsDevelopment()) throw new InvalidOperationException("Demo storage is allowed only in Development.");
-if ((builder.Configuration["ApiKey"] ?? "").Length < 32) throw new InvalidOperationException("Set ApiKey to a random value of at least 32 characters.");
+var apiKey = builder.Configuration["ApiKey"] ?? "";
+if (!migrateOnly && (apiKey.Length < 32 || apiKey.StartsWith("replace-", StringComparison.OrdinalIgnoreCase)))
+    throw new InvalidOperationException("Set ApiKey to a random value of at least 32 characters.");
+var connectionString = demo ? null : DatabaseConfiguration.Validate(builder.Configuration, builder.Environment.IsDevelopment(), migrateOnly);
 builder.Services.AddDbContext<ClinicDbContext>(options =>
 {
     if (demo) options.UseInMemoryDatabase("CareflowDemo");
-    else options.UseNpgsql(builder.Configuration.GetConnectionString("Careflow"));
+    else options.UseNpgsql(connectionString);
 });
 builder.Services.AddRateLimiter(options => options.AddFixedWindowLimiter("api", limit =>
 {
@@ -41,9 +47,11 @@ app.MapClinicEndpoints();
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ClinicDbContext>();
-    if (!demo) await db.Database.MigrateAsync();
+    // Production migrations run as a separate job with a different database login.
+    if (!demo && (migrateOnly || builder.Environment.IsDevelopment())) await db.Database.MigrateAsync();
     if (builder.Configuration.GetValue<bool>("SeedDemoData")) await SeedData.InitializeAsync(db, builder.Configuration["ClinicTimeZone"] ?? "Asia/Dhaka");
 }
+if (migrateOnly) return;
 app.Run();
 
 public partial class Program;

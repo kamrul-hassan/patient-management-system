@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticated } from "@/lib/session";
 import { sameOrigin } from "@/lib/security";
+import { serverSecret } from "@/lib/server-secrets";
 
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   if (!(await authenticated()))
@@ -10,8 +11,8 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const { path } = await context.params;
   if (path.some((segment) => !/^[a-zA-Z0-9-]+$/.test(segment)))
     return NextResponse.json({ detail: "Invalid path." }, { status: 400 });
-  const key = process.env.API_KEY;
-  if (!key)
+  const key = serverSecret("API_KEY");
+  if (!key || key.length < 32 || key.startsWith("replace-"))
     return NextResponse.json(
       { detail: "The API connection has not been configured." },
       { status: 503 },
@@ -30,6 +31,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
         headers: { "X-Api-Key": key, "Content-Type": "application/json" },
         body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.text(),
         cache: "no-store",
+        redirect: "error",
         signal: AbortSignal.timeout(timeoutMs),
       },
     );

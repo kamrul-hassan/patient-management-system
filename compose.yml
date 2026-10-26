@@ -1,46 +1,122 @@
+name: careflow
+
+x-api: &api
+  image: careflow-api:local
+  build:
+    context: ./apps/api
+  user: "1654:1654"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [database]
+
 services:
   db:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
     environment:
       POSTGRES_DB: careflow
-      POSTGRES_USER: careflow
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [postgres_password, migration_password, application_password]
     volumes:
       - postgres_data:/var/lib/postgresql
+      - ./docker/postgres/init-app.sh:/docker-entrypoint-initdb.d/10-init-app.sh:ro
+    networks: [database]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U careflow -d careflow"]
+      test: [CMD-SHELL, "pg_isready -U postgres -d careflow"]
       interval: 5s
       timeout: 5s
-      retries: 12
+      retries: 20
+    security_opt: [no-new-privileges:true]
     restart: unless-stopped
-  api:
-    build:
-      context: ./apps/api
+
+  migrate:
+    <<: *api
+    command: [--migrate]
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__Careflow: Host=db;Port=5432;Database=careflow;Username=careflow;Password=${POSTGRES_PASSWORD}
-      ApiKey: ${API_KEY:?Set API_KEY in .env}
-      SeedDemoData: "false"
+      Database__AllowUnencryptedConnection: "true"
+    secrets:
+      - source: migration_connection
+        target: ConnectionStrings__Careflow
     depends_on:
       db:
         condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      # Only the isolated Docker database network uses plain transport.
+      # External/managed databases must use certificate-verified TLS instead.
+      Database__AllowUnencryptedConnection: "true"
+      SeedDemoData: "false"
+    secrets:
+      - source: api_key
+        target: ApiKey
+      - source: application_connection
+        target: ConnectionStrings__Careflow
+    networks: [database, application]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
+
   web:
+    image: careflow-web:local
     build:
       context: ./apps/web
+    user: node
     environment:
       API_URL: http://api:8080
-      API_KEY: ${API_KEY}
-      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
-      STAFF_EMAIL: ${STAFF_EMAIL:?Set STAFF_EMAIL in .env}
-      STAFF_PASSWORD: ${STAFF_PASSWORD:?Set STAFF_PASSWORD in .env}
+      API_KEY_FILE: /run/secrets/api_key
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      STAFF_PASSWORD_FILE: /run/secrets/staff_password
+      STAFF_EMAIL: ${STAFF_EMAIL:-admin@careflow.local}
       DEMO_MODE: "false"
-      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the browser-facing origin}
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+    secrets: [api_key, session_secret, staff_password]
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /app/.next/cache:rw,nosuid,size=64m,uid=1000,gid=1000
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [application]
     depends_on:
-      - api
+      api:
+        condition: service_started
     restart: unless-stopped
+
+networks:
+  database:
+    internal: true
+  application:
+
 volumes:
   postgres_data:
+
+secrets:
+  postgres_password:
+    file: ./.secrets/postgres_password
+  migration_password:
+    file: ./.secrets/migration_password
+  application_password:
+    file: ./.secrets/application_password
+  api_key:
+    file: ./.secrets/api_key
+  session_secret:
+    file: ./.secrets/session_secret
+  staff_password:
+    file: ./.secrets/staff_password
+  migration_connection:
+    file: ./.secrets/migration_connection
+  application_connection:
+    file: ./.secrets/application_connection

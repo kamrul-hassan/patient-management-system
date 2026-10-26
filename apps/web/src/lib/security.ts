@@ -4,7 +4,21 @@ export function sameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return false;
   const configured = process.env.APP_ORIGIN;
-  if (configured) return origin === new URL(configured).origin;
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      if (url.username || url.password || !["http:", "https:"].includes(url.protocol)) return false;
+      if (
+        process.env.NODE_ENV === "production" &&
+        url.protocol !== "https:" &&
+        !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+      )
+        return false;
+      return origin === url.origin;
+    } catch {
+      return false;
+    }
+  }
   if (process.env.NODE_ENV === "production") return false;
   // Next's internal request URL can use localhost even when a browser uses 127.0.0.1.
   const host = request.headers.get("host");

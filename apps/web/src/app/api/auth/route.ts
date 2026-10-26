@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSession } from "@/lib/session";
 import { sameOrigin } from "@/lib/security";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { serverSecret } from "@/lib/server-secrets";
 
 // Single staff account for the starter. Deploy behind an identity provider for teams.
 const attempts = new Map<string, { count: number; reset: number }>();
@@ -33,13 +34,14 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ detail: "Invalid request." }, { status: 400 });
   }
-  const expected = process.env.STAFF_PASSWORD;
+  const expected = serverSecret("STAFF_PASSWORD");
   const hash = (v: string) => createHash("sha256").update(v).digest();
   if (
     typeof body.email !== "string" ||
     typeof body.password !== "string" ||
     !expected ||
     expected.length < 12 ||
+    expected.startsWith("replace-") ||
     body.email !== process.env.STAFF_EMAIL ||
     !timingSafeEqual(hash(body.password), hash(expected))
   )

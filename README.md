@@ -68,6 +68,18 @@ docker compose stop
 
 `docker compose down` removes containers and networks while retaining the named database volume. Do not use `--volumes`/`-v` on data you need. The role initializer runs only on a new volume; an older volume needs a planned role/permissions migration. Do not delete an existing volume to apply these settings.
 
+## Manual local backups
+
+On Windows, run an on-demand backup with the same account that runs this project:
+
+```powershell
+pwsh -NoProfile -File scripts/backup-docker.ps1
+```
+
+The command reads the current database name from the private connection file. It takes a consistent snapshot without changing the app database, encrypts the archive using Windows DPAPI for the current account, and verifies a restore in a separate temporary database using table counts and SHA-256 fingerprints. The temporary database and plaintext files are removed afterward. Backups and verification metadata stay under the restricted, Git-ignored `.local/backups/automatic/` folder. A `latest.json` with `Verified: true` identifies the most recent successful backup. No schedule or automatic deletion is configured.
+
+DPAPI backups require the same Windows account and its encryption keys to decrypt. Keep that Windows profile recoverable; these local backups do not provide off-device disaster recovery. Request a restore into a separate database before switching an application to recovered data.
+
 ## Native development
 
 Docker is the reproducible setup for a fresh clone. Native development remains available with .NET 10, Node.js 24, PowerShell 7, and PostgreSQL. The existing private setup helper is deliberately not included in Git.

@@ -30,7 +30,7 @@ try {
             $file -eq 'configure-local.ps1' -or
             (!$template -and $file -match '(^|/)\.env(?:\.[^/]*)?$') -or
             $file -match '(^|/)(secrets\.json|\.pgpass|pgpass\.conf|\.pg_service\.conf|\.envrc|appsettings\.(?:.*\.)?local\.json)$' -or
-            $file -match '\.(dump|backup|bak|pem|key|p12|pfx|zip|tar|tgz|gz|bz2|xz|db(?:-.*)?|sqlite3?(?:-.*)?|mdf|ldf|pgdata)$' -or
+            $file -match '\.(dump|dpapi|backup|bak|pem|key|p12|pfx|zip|tar|tgz|gz|bz2|xz|db(?:-.*)?|sqlite3?(?:-.*)?|mdf|ldf|pgdata)$' -or
             (!$seed -and $file -match '\.sql$')
         if ($blocked) { $failures += "$file (sensitive file type/path)"; continue }
         if (!(Test-Path -LiteralPath $file -PathType Leaf)) { continue }
